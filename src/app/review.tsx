@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useMemo, useRef, useState } from "react";
 import type { CollectionItem, ReviewDraft, StatusFilter } from "../lib/types";
 import type { SaveLinkResult } from "../lib/save-link";
 import { formatAddedTimestamp, sourceLabels, statusLabels } from "./_lib/presentation";
@@ -27,18 +27,25 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
   const [filter, setFilter] = useState<StatusFilter>("to_explore");
   const [searchText, setSearchText] = useState("");
   const [search, setSearch] = useState<{ query: string; ids: Set<string> } | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [selectedId, setSelectedId] = useState<string>();
   const [detailOpen, setDetailOpen] = useState(false);
   const [skipped, setSkipped] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
   const navigationLock = useRef(false);
-  const pendingFocus = useRef(false);
+  const [focusRequest, setFocusRequest] = useState<{ scope: "mobile" | "all"; itemId?: string } | null>(null);
+  const handledFocus = useRef<typeof focusRequest>(null);
   const queueRef = useRef<HTMLElement>(null);
   const selectedItemRef = useRef<HTMLButtonElement>(null);
   const detailTitleRef = useRef<HTMLHeadingElement>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+  const linkInputRef = useRef<HTMLInputElement>(null);
+  const [deleteState, setDeleteState] = useState<{ id: string; error?: string } | null>(null);
   const [linkUrl, setLinkUrl] = useState("");
   const [linkTitle, setLinkTitle] = useState("");
-  const { drafts, saved, states, change, flush, act } = useReviews();
+  const { drafts, saved, states, change, flush, act, remove } = useReviews();
   const sourceItems = useMemo(() => {
     const matching = items.map((item) => saved[item.id] ?? item)
       .filter((item) => source === "all" || item.source === source);
@@ -64,12 +71,24 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
   const canFinish = !!draft && draft.rating !== null && draft.takeaway.trim().length > 0;
 
   useEffect(() => {
-    if (busy || !pendingFocus.current || (detailOpen && !selected)) return;
-    pendingFocus.current = false;
-    if (!window.matchMedia("(max-width: 650px)").matches) return;
-    const target = detailOpen ? detailTitleRef.current : selectedItemRef.current ?? queueRef.current;
+    if (busy || !focusRequest || handledFocus.current === focusRequest) return;
+    // The action result can arrive before the refreshed collection.
+    if (focusRequest.itemId && selected?.id !== focusRequest.itemId) return;
+    handledFocus.current = focusRequest;
+    if (focusRequest.scope === "mobile" && !window.matchMedia("(max-width: 650px)").matches) return;
+    const target = focusRequest.itemId
+      ? detailOpen ? detailTitleRef.current : selectedItemRef.current
+      : queueRef.current;
     target?.focus();
-  }, [busy, detailOpen, selected]);
+  }, [busy, detailOpen, selected, focusRequest]);
+
+  useEffect(() => {
+    if (addOpen) linkInputRef.current?.focus();
+  }, [addOpen]);
+
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
 
   async function navigate(changeView: () => void) {
     if (navigationLock.current) return;
@@ -110,15 +129,26 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
     if (selected && !navigationLock.current) change(selected, patch, "rating" in patch);
   }
 
-  async function decide(command: "finish" | "archive" | "skip") {
+  async function decide(command: "finish" | "archive" | "skip" | "delete") {
     if (!selected || navigationLock.current) return;
+    if (command === "delete" && !window.confirm(
+      `Delete “${selected.title}” from Followthrough?\n\nThis permanently removes the saved item, rating, and notes. It cannot be undone. The original website is not affected.`,
+    )) return;
     navigationLock.current = true;
     setBusy(true);
     const item = selected;
     const position = visibleItems.findIndex((candidate) => candidate.id === item.id);
     const next = visibleItems[position + 1] ?? visibleItems.find((candidate) => candidate.id !== item.id);
     try {
-      if (command === "skip") {
+      if (command === "delete") {
+        setDeleteState({ id: item.id });
+        const result = await remove(item);
+        if (!result.ok) {
+          setDeleteState({ id: item.id, error: result.error });
+          return;
+        }
+        setDeleteState(null);
+      } else if (command === "skip") {
         if (!(await flush(item))) return;
         setSkipped((previous) => new Set(previous).add(item.id));
       } else if (!(await act(item, command))) {
@@ -126,7 +156,7 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
       }
       setSelectedId(next?.id);
       setDetailOpen(!!next);
-      pendingFocus.current = true;
+      setFocusRequest({ scope: command === "delete" ? "all" : "mobile", itemId: next?.id });
     } finally {
       navigationLock.current = false;
       setBusy(false);
@@ -155,9 +185,10 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
           setFilter(result.item.status);
           setSelectedId(result.item.id);
           setDetailOpen(true);
-          pendingFocus.current = true;
+          setFocusRequest({ scope: "all", itemId: result.item.id });
           setLinkUrl("");
           setLinkTitle("");
+          setAddOpen(false);
         }
         return result;
       } catch {
@@ -180,6 +211,10 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
       <header className={styles.header}>
         <Link href="/" className={styles.wordmark}>Followthrough</Link>
         <div className={styles.preferences}>
+          <button ref={addButtonRef} type="button" className={styles.addButton} disabled={busy}
+            aria-expanded={addOpen} aria-controls="add-link-form" onClick={() => setAddOpen(!addOpen)}>
+            Add link
+          </button>
           <label className={styles.themeToggle}>
             <input type="checkbox" checked={darkMode} onChange={(event) => changeTheme(event.target.checked)} />
             Dark mode
@@ -187,43 +222,28 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
         </div>
       </header>
 
-      <p id="review-requirements" className={styles.reviewNotice}>Ratings and notes autosave. Finish requires both.</p>
-
-      <details className={styles.addLink}>
-        <summary>Add link</summary>
-        <form action={submitLink}>
+      {addOpen && (
+        <form id="add-link-form" className={styles.addLink} action={submitLink}>
           <fieldset className={styles.addFields} disabled={busy || isSaving}>
             <label>
               URL
-              <input name="url" type="url" required placeholder="https://…" value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} />
+              <input ref={linkInputRef} name="url" type="url" required placeholder="https://…" value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} />
             </label>
             <label>
               Title (optional)
               <input name="title" type="text" value={linkTitle} onChange={(event) => setLinkTitle(event.target.value)} />
             </label>
             <button type="submit">{isSaving ? "Saving…" : "Save"}</button>
+            <button type="button" onClick={() => { setAddOpen(false); addButtonRef.current?.focus(); }}>Cancel</button>
           </fieldset>
-          {!isSaving && saveResult && (
-            <p className={styles.saveMessage} role={saveResult.ok ? "status" : "alert"}>
-              {saveResult.ok ? saveResult.created ? "Saved." : "Already saved; opened the existing item." : saveResult.error}
-            </p>
+          {!isSaving && saveResult && !saveResult.ok && (
+            <p className={styles.saveMessage} role="alert">{saveResult.error}</p>
           )}
         </form>
-      </details>
-
-      <form className={styles.searchForm} role="search" onSubmit={(event) => { event.preventDefault(); applySearch(searchText); }}>
-        <label htmlFor="collection-search">Search</label>
-        <input id="collection-search" type="search" value={searchText} disabled={busy}
-          onChange={(event) => setSearchText(event.target.value)} placeholder="Titles, saved text, notes" />
-        <button type="submit" disabled={busy}>Search</button>
-        {(search || searchText) && <button type="button" disabled={busy} onClick={() => applySearch("")}>Clear</button>}
-      </form>
-      {search && (
-        <p className={styles.searchNotice} role="status">
-          {visibleItems.length} {visibleItems.length === 1 ? "result" : "results"} for “{search.query}” in this view. Search again to refresh edited notes.
-        </p>
       )}
 
+
+      <div className={styles.toolbar}>
       <nav className={styles.sourceFilters} aria-label="Filter collection by source">
         {sources.map((value) => (
           <button key={value} type="button" disabled={busy} aria-pressed={source === value}
@@ -232,6 +252,30 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
           </button>
         ))}
       </nav>
+        <button type="button" className={styles.searchToggle} disabled={busy}
+          aria-expanded={searchOpen} aria-controls="collection-search-form" onClick={() => setSearchOpen(!searchOpen)}>
+          Search
+        </button>
+      </div>
+      {searchOpen && (
+        <form id="collection-search-form" className={styles.searchForm} role="search" onSubmit={(event) => { event.preventDefault(); applySearch(searchText); }}>
+          <label htmlFor="collection-search" className="sr-only">Search titles, saved text, and notes</label>
+          <input ref={searchInputRef} id="collection-search" type="search" value={searchText} disabled={busy}
+            onChange={(event) => setSearchText(event.target.value)} placeholder="Titles, saved text, notes" />
+          <button type="submit" disabled={busy}>Search</button>
+        </form>
+      )}
+      {search && (
+        <p className={styles.searchNotice} role="status">
+          {visibleItems.length} {visibleItems.length === 1 ? "result" : "results"} for “{search.query}” in this view.{" "}
+          <button type="button" disabled={busy} onClick={() => applySearch("")}>Clear search</button>
+        </p>
+      )}
+      {!addOpen && saveResult?.ok && selected?.id === saveResult.item.id && (
+        <p className={styles.saveMessage} role="status">
+          {saveResult.created ? "Link saved." : "Already saved; opened the existing item."}
+        </p>
+      )}
       <nav className={styles.filters} aria-label="Filter collection by status">
         {filters.map((status) => (
           <button key={status} type="button" disabled={busy} aria-pressed={filter === status}
@@ -259,7 +303,7 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
               return (
                 <li key={item.id}>
                   <button ref={selected?.id === item.id ? selectedItemRef : undefined} type="button" className={styles.item} disabled={busy} aria-current={selected?.id === item.id ? "true" : undefined}
-                    onClick={() => void navigate(() => { setSelectedId(item.id); setDetailOpen(true); pendingFocus.current = true; })}>
+                    onClick={() => void navigate(() => { setSelectedId(item.id); setDetailOpen(true); setFocusRequest({ scope: "mobile", itemId: item.id }); })}>
                     <span className={styles.itemMeta}>{sourceLabels[item.source]}</span>
                     <span className={styles.itemTitle}>{item.title}</span>
                     {rating !== null && (
@@ -280,7 +324,7 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
         <section className={styles.detail} aria-label="Selected item" aria-labelledby={selected ? "review-item-title" : undefined}>
           {selected && draft ? (
             <>
-              <button type="button" disabled={busy} className={styles.mobileBack} onClick={() => void navigate(() => { setDetailOpen(false); pendingFocus.current = true; })}>← Back to items</button>
+              <button type="button" disabled={busy} className={styles.mobileBack} onClick={() => void navigate(() => { setDetailOpen(false); setFocusRequest({ scope: "mobile", itemId: selected.id }); })}>← Back to items</button>
               <div>
                 <h2 ref={detailTitleRef} tabIndex={-1} id="review-item-title" className={styles.detailTitle}>{selected.title}</h2>
                 <div className={styles.detailMeta}>
@@ -299,6 +343,7 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
               </div>
 
               <section className={styles.review} aria-label="Your review">
+                <p id="review-requirements" className={styles.reviewNotice}>Ratings and notes autosave. Finish requires both.</p>
                 <fieldset className={styles.ratingField} disabled={busy}>
                   <legend>Rating <span>(required to finish)</span></legend>
                   <div className={styles.ratingLine}>
@@ -327,16 +372,21 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
                   <button type="button" disabled={busy || !canFinish || selected.status === "finished"} className={styles.finishButton} onClick={() => void decide("finish")}>
                     {selected.status === "finished" ? "Finished" : "Finish"}
                   </button>
-                  {selected.status !== "archived" && (
-                    <details key={selected.id} className={styles.moreActions}>
-                      <summary>More</summary>
-                      <div className={styles.moreMenu}>
-                        <button type="button" disabled={busy} onClick={() => void decide("archive")}>Archive</button>
-                        {selected.status === "to_explore" && <button type="button" disabled={busy} onClick={() => void decide("skip")}>Skip for now</button>}
-                      </div>
-                    </details>
-                  )}
+                  <details key={selected.id} className={styles.moreActions}>
+                    <summary>More</summary>
+                    <div className={styles.moreMenu}>
+                      {selected.status !== "archived" && <button type="button" disabled={busy} onClick={() => void decide("archive")}>Archive</button>}
+                      {selected.status === "to_explore" && <button type="button" disabled={busy} onClick={() => void decide("skip")}>Skip for now</button>}
+                      <button type="button" className={styles.deleteButton} disabled={busy}
+                        onClick={() => startTransition(async () => { await decide("delete"); })}>Delete from Followthrough…</button>
+                    </div>
+                  </details>
                 </div>
+                {deleteState?.id === selected.id && (
+                  <p className={styles.saveMessage} role={deleteState.error ? "alert" : "status"}>
+                    {deleteState.error ?? "Deleting…"}
+                  </p>
+                )}
               </section>
             </>
           ) : <p className={styles.empty}>Select an item to see its content and review.</p>}

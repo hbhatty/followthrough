@@ -2,7 +2,7 @@ import "server-only";
 
 import type Database from "better-sqlite3";
 import { getDatabase } from "./database";
-import type { CollectionItem } from "./types";
+import type { CollectionItem, DeleteResult } from "./types";
 
 type ItemRow = Omit<CollectionItem, "isDemo"> & { isDemo: number };
 
@@ -31,6 +31,7 @@ const ordering = "ORDER BY item.added_at DESC, item.id ASC";
 interface CollectionQueries {
   all: Database.Statement<[], ItemRow>;
   item: Database.Statement<[string], ItemRow>;
+  delete: Database.Statement<[string]>;
 }
 
 const preparedQueries = new WeakMap<Database.Database, CollectionQueries>();
@@ -42,6 +43,7 @@ function getQueries() {
     queries = {
       all: database.prepare<[], ItemRow>(`${itemSelection} ${ordering}`),
       item: database.prepare<[string], ItemRow>(`${itemSelection} WHERE item.id = ?`),
+      delete: database.prepare<[string]>("DELETE FROM source_items WHERE id = ?"),
     };
     preparedQueries.set(database, queries);
   }
@@ -56,4 +58,13 @@ export function listItems(): CollectionItem[] {
 export function getItem(id: string): CollectionItem | undefined {
   const row = getQueries().item.get(id);
   return row ? { ...row, isDemo: row.isDemo === 1 } : undefined;
+}
+
+export function deleteItem(id: string): DeleteResult {
+  if (typeof id !== "string" || !id.trim()) {
+    return { ok: false, error: "Choose a saved item to delete." };
+  }
+  // Foreign keys remove the item's enrichment and review in the same statement.
+  getQueries().delete.run(id);
+  return { ok: true };
 }

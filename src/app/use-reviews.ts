@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CollectionItem, ReviewDraft, ReviewResult } from "../lib/types";
-import { updateReview } from "./actions";
+import type { CollectionItem, DeleteResult, ReviewDraft, ReviewResult } from "../lib/types";
+import { deleteLink, updateReview } from "./actions";
 
 type ReviewState = { phase: "saving" | "saved" | "error"; error?: string };
 type Transition = "finish" | "archive";
@@ -172,6 +172,34 @@ export function useReviews() {
     return promise;
   }, [getEntry, run]);
 
+  const remove = useCallback(async (item: CollectionItem): Promise<DeleteResult> => {
+    const entry = getEntry(item);
+    cancelDebounce(entry);
+    // Let in-flight saves settle, but do not require saving a draft being deleted.
+    await entry.running;
+    let result: DeleteResult;
+    try {
+      result = await deleteLink(item.id);
+    } catch {
+      result = { ok: false, error: "Could not reach the app. Try deleting the link again." };
+    }
+    if (!result.ok) {
+      if (entry.dirty && !entry.error) void run(entry);
+      return result;
+    }
+    entries.current.delete(item.id);
+    setSnapshot((previous) => {
+      const drafts = { ...previous.drafts };
+      const saved = { ...previous.saved };
+      const states = { ...previous.states };
+      delete drafts[item.id];
+      delete saved[item.id];
+      delete states[item.id];
+      return { drafts, saved, states };
+    });
+    return result;
+  }, [getEntry, run]);
+
   useEffect(() => {
     mounted.current = true;
     const currentEntries = entries.current;
@@ -192,5 +220,5 @@ export function useReviews() {
     };
   }, [run]);
 
-  return { ...snapshot, change, flush, act };
+  return { ...snapshot, change, flush, act, remove };
 }

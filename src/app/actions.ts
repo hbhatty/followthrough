@@ -1,9 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { deleteItem } from "../lib/collection";
 import { saveReview } from "../lib/reviews";
 import { saveLink, type SaveLinkResult } from "../lib/save-link";
-import type { ReviewCommand, ReviewDraft, ReviewResult } from "../lib/types";
+import type { DeleteResult, ReviewCommand, ReviewDraft, ReviewResult } from "../lib/types";
 
 export async function addLink(formData: FormData): Promise<SaveLinkResult> {
   const url = formData.get("url");
@@ -37,5 +38,16 @@ export async function updateReview(
   if (result.ok && command !== "save") {
     revalidatePath("/");
   }
+  return result;
+}
+
+export async function deleteLink(itemId: string): Promise<DeleteResult> {
+  let result: DeleteResult;
+  try {
+    result = deleteItem(itemId);
+  } catch {
+    return { ok: false, error: "The link could not be deleted. Please try again." };
+  }
+  if (result.ok) revalidatePath("/");
   return result;
 }

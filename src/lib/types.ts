@@ -28,3 +28,7 @@ export type ReviewCommand = "save" | "finish" | "archive";
 export type ReviewResult =
   | { ok: true; item: CollectionItem }
   | { ok: false; error: string };
+
+export type DeleteResult =
+  | { ok: true }
+  | { ok: false; error: string };

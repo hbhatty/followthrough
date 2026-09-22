@@ -2,8 +2,9 @@
   --page: #fff;
   --ink: #222;
   --muted: #555;
-  --link: #0645ad;
+  --link: #3e6485;
   --border: #bbb;
+  --danger: #a32121;
   --line: #ccc;
   --soft-line: #ddd;
   --shade: #eee;
@@ -24,7 +25,8 @@
   --page: #202020;
   --ink: #e4e4e4;
   --muted: #b7b7b7;
-  --link: #9dbffc;
+  --link: #9bb0c3;
+  --danger: #ffabab;
   --border: #666;
   --line: #555;
   --soft-line: #444;
@@ -49,35 +51,40 @@
 .collection summary:focus-visible { outline: 1px dotted var(--ink); outline-offset: 2px; }
 .header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .collection .wordmark { color: var(--ink); font-size: 22px; font-weight: bold; text-decoration: none; }
-.preferences { display: flex; align-items: center; gap: 16px; font-size: 12px; }
+.preferences { display: flex; align-items: center; gap: 16px; margin-left: auto; font-size: 12px; }
 .themeToggle { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; cursor: pointer; }
 .themeToggle input { margin: 0; }
 .reviewNotice { margin-bottom: 12px; color: var(--muted); font-size: 11px; }
-.addLink { margin-bottom: 12px; }
-.addLink > summary { width: fit-content; color: var(--ink); text-decoration: none; }
-.addFields { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; min-width: 0; margin: 8px 0 0; padding: 0; border: 0; }
+.collection .addButton { padding: 5px 14px; border: 1px solid var(--link); border-radius: 0; background: var(--link); color: var(--page); font-weight: bold; }
+.addButton:disabled { opacity: 0.65; }
+.addLink { margin-bottom: 14px; padding: 10px; border: 1px solid var(--border); background: var(--hover); }
+.addFields { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .addFields label { display: flex; flex: 1 1 180px; flex-direction: column; gap: 3px; min-width: 0; }
 .addFields label:first-child { flex: 2 1 280px; }
 .addFields input { width: 100%; min-width: 0; padding: 4px 6px; border: 1px solid var(--control-border); border-radius: 0; background: var(--field); color: var(--ink); }
 .addFields button { padding: 4px 12px; border: 1px solid var(--control-border); border-radius: 0; background: var(--shade); color: var(--ink); }
 .addFields:disabled { opacity: 0.65; }
 .saveMessage { margin-top: 6px; font-size: 12px; }
-.searchForm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.toolbar { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.collection .searchToggle { padding: 0; border: 0; background: none; color: var(--muted); text-decoration: none; font-size: 12px; }
+.searchForm { display: flex; align-items: center; gap: 6px; max-width: 420px; margin: 0 0 10px auto; }
 .searchForm input { flex: 1 1 160px; min-width: 0; padding: 4px 6px; border: 1px solid var(--control-border); border-radius: 0; background: var(--field); color: var(--ink); }
 .searchForm button { padding: 4px 10px; border: 1px solid var(--control-border); border-radius: 0; background: var(--shade); color: var(--ink); }
 .searchNotice { margin-bottom: 10px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .sessionNotice { padding: 8px 12px; border: 1px solid var(--border); border-top: 0; font-size: 12px; }
-.sessionNotice button, .retryButton { padding: 0; border: 0; background: none; color: var(--link); text-decoration: underline; }
-.sourceFilters { display: flex; margin-bottom: 9px; }
-.sourceFilters button { padding: 0 12px; border: 0; border-right: 1px solid var(--border); background: none; color: var(--link); text-decoration: underline; }
+.sessionNotice button, .retryButton, .searchNotice button { padding: 0; border: 0; background: none; color: var(--muted); text-decoration: none; }
+.sourceFilters { display: flex; flex-wrap: wrap; }
+.sourceFilters button { padding: 0 12px; border: 0; border-right: 1px solid var(--border); background: none; color: var(--muted); }
 .sourceFilters button:first-child { padding-left: 0; }
 .sourceFilters button:last-child { border-right: 0; }
-.sourceFilters button[aria-pressed="true"] { color: var(--ink); font-weight: bold; text-decoration: none; }
+.sourceFilters button[aria-pressed="true"] { color: var(--ink); font-weight: bold; }
 .filters { display: flex; flex-wrap: wrap; padding: 8px 0; background: var(--shade); border: 1px solid var(--border); }
-.filters button { padding: 0 12px; border: 0; border-right: 1px solid var(--border); background: none; color: var(--link); text-decoration: underline; }
+.filters button { padding: 0 12px; border: 0; border-right: 1px solid var(--border); background: none; color: var(--muted); }
 .filters button:last-child { border-right: 0; }
-.filters button[aria-pressed="true"] { color: var(--ink); font-weight: bold; text-decoration: none; }
-.filters button span { margin-left: 4px; font-weight: normal; }
+.filters button[aria-pressed="true"] { color: var(--ink); font-weight: bold; }
+.filters button span { margin-left: 4px; color: var(--muted); font-weight: normal; }
+.sourceFilters button:hover:enabled, .filters button:hover:enabled { color: var(--ink); background: var(--hover); }
+.searchToggle:hover:enabled, .sessionNotice button:hover:enabled, .retryButton:hover:enabled, .searchNotice button:hover:enabled, .mobileBack:hover:enabled { color: var(--ink); text-decoration: underline; }
 .workspace { display: grid; grid-template-columns: 240px minmax(0, 1fr); border: 1px solid var(--border); border-top: 0; }
 .queue { border-right: 1px solid var(--line); }
 .queue, .detail { max-height: calc(100dvh - 180px); overflow-y: auto; }
@@ -121,10 +128,12 @@
 .finishButton:disabled { border-color: var(--disabled-border); color: var(--disabled); }
 .moreActions { position: relative; font-size: 12px; }
 .moreActions summary { color: var(--ink); text-decoration: none; }
-.moreMenu { position: absolute; z-index: 1; top: calc(100% + 5px); left: 0; min-width: 130px; padding: 3px; border: 1px solid var(--control-border); background: var(--page); }
+.moreMenu { position: absolute; z-index: 1; top: calc(100% + 5px); left: 0; min-width: 200px; padding: 3px; border: 1px solid var(--control-border); background: var(--page); }
 .moreMenu button { display: block; width: 100%; min-height: 30px; padding: 4px 8px; border: 0; background: var(--page); color: var(--ink); text-align: left; }
 .moreMenu button:hover:enabled { background: var(--shade); }
 .moreMenu button:disabled { color: var(--disabled); }
+.moreMenu .deleteButton { color: var(--danger); }
+.moreMenu button + .deleteButton { margin-top: 3px; border-top: 1px solid var(--border); }
 .mobileBack { display: none; }
 .empty { padding: 12px; color: var(--muted); }
 
@@ -141,7 +150,7 @@
   .detail { display: none; padding: 12px; }
   .collection[data-detail-open="true"] .queue { display: none; }
   .collection[data-detail-open="true"] .detail { display: block; }
-  .mobileBack { display: block; margin-bottom: 14px; padding: 0; border: 0; background: none; color: var(--link); text-decoration: underline; }
+  .mobileBack { display: block; margin-bottom: 14px; padding: 0; border: 0; background: none; color: var(--muted); text-decoration: none; }
   .star { width: 34px; height: 36px; }
   .moreMenu { top: auto; bottom: calc(100% + 5px); }
 }
