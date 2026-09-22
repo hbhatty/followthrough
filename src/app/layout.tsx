@@ -1,6 +1,4 @@
 import type { Metadata } from "next";
-import "@fontsource/ibm-plex-sans/latin-400.css";
-import "@fontsource/ibm-plex-sans/latin-700.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -8,7 +6,7 @@ export const metadata: Metadata = {
     default: "Followthrough — your saved collection",
     template: "%s · Followthrough",
   },
-  description: "A quiet place to return to saved ideas and keep what matters.",
+  description: "Save links, rate their usefulness, and keep your notes.",
   robots: { index: false, follow: false },
 };
 

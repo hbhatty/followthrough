@@ -13,28 +13,18 @@ const filters: StatusFilter[] = ["to_explore", "finished", "archived", "all"];
 const sources = ["x", "youtube", "website", "all"] as const;
 const ratings = [1, 2, 3, 4, 5];
 
-function Star({ filled }: { filled: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.5">
-      <path d="m12 3 2.8 5.7 6.3.9-4.55 4.45 1.08 6.28L12 17.36l-5.63 2.97 1.08-6.28L2.9 9.6l6.3-.9L12 3Z" />
-    </svg>
-  );
-}
-
 export default function ReviewCollection({ items, initialDarkMode }: { items: readonly CollectionItem[]; initialDarkMode: boolean }) {
   const [darkMode, setDarkMode] = useState(initialDarkMode);
   const [source, setSource] = useState<(typeof sources)[number]>("x");
   const [filter, setFilter] = useState<StatusFilter>("to_explore");
   const [searchText, setSearchText] = useState("");
   const [search, setSearch] = useState<{ query: string; ids: Set<string> } | null>(null);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const [selectedId, setSelectedId] = useState<string>();
   const [detailOpen, setDetailOpen] = useState(false);
   const [skipped, setSkipped] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
   const navigationLock = useRef(false);
-  const [focusRequest, setFocusRequest] = useState<{ scope: "mobile" | "all"; itemId?: string } | null>(null);
+  const [focusRequest, setFocusRequest] = useState<{ itemId?: string } | null>(null);
   const handledFocus = useRef<typeof focusRequest>(null);
   const queueRef = useRef<HTMLElement>(null);
   const selectedItemRef = useRef<HTMLButtonElement>(null);
@@ -67,7 +57,6 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
   const selected = visibleItems.find((item) => item.id === selectedId) ?? visibleItems[0];
   const draft = selected ? drafts[selected.id] ?? { rating: selected.rating, takeaway: selected.takeaway ?? "" } : null;
   const reviewState = selected ? states[selected.id] : undefined;
-  const hasBookmarkOrder = source === "x" && !!sourceItems.at(-1)?.sourceSortIndex;
   const canFinish = !!draft && draft.rating !== null && draft.takeaway.trim().length > 0;
 
   useEffect(() => {
@@ -75,7 +64,6 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
     // The action result can arrive before the refreshed collection.
     if (focusRequest.itemId && selected?.id !== focusRequest.itemId) return;
     handledFocus.current = focusRequest;
-    if (focusRequest.scope === "mobile" && !window.matchMedia("(max-width: 650px)").matches) return;
     const target = focusRequest.itemId
       ? detailOpen ? detailTitleRef.current : selectedItemRef.current
       : queueRef.current;
@@ -85,10 +73,6 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
   useEffect(() => {
     if (addOpen) linkInputRef.current?.focus();
   }, [addOpen]);
-
-  useEffect(() => {
-    if (searchOpen) searchInputRef.current?.focus();
-  }, [searchOpen]);
 
   async function navigate(changeView: () => void) {
     if (navigationLock.current) return;
@@ -156,7 +140,7 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
       }
       setSelectedId(next?.id);
       setDetailOpen(!!next);
-      setFocusRequest({ scope: command === "delete" ? "all" : "mobile", itemId: next?.id });
+      setFocusRequest({ itemId: next?.id });
     } finally {
       navigationLock.current = false;
       setBusy(false);
@@ -185,7 +169,7 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
           setFilter(result.item.status);
           setSelectedId(result.item.id);
           setDetailOpen(true);
-          setFocusRequest({ scope: "all", itemId: result.item.id });
+          setFocusRequest({ itemId: result.item.id });
           setLinkUrl("");
           setLinkTitle("");
           setAddOpen(false);
@@ -207,19 +191,17 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
   }
 
   return (
-    <div className={styles.collection} data-review-collection data-detail-open={detailOpen} data-theme={darkMode ? "dark" : "light"}>
+    <div className={styles.collection} data-review-collection data-detail-open={detailOpen && !!selected} data-theme={darkMode ? "dark" : "light"}>
       <header className={styles.header}>
         <Link href="/" className={styles.wordmark}>Followthrough</Link>
-        <div className={styles.preferences}>
-          <button ref={addButtonRef} type="button" className={styles.addButton} disabled={busy}
-            aria-expanded={addOpen} aria-controls="add-link-form" onClick={() => setAddOpen(!addOpen)}>
-            Add link
-          </button>
-          <label className={styles.themeToggle}>
-            <input type="checkbox" checked={darkMode} onChange={(event) => changeTheme(event.target.checked)} />
-            Dark mode
-          </label>
-        </div>
+        <button ref={addButtonRef} type="button" className={styles.textButton} disabled={busy}
+          aria-expanded={addOpen} aria-controls="add-link-form" onClick={() => setAddOpen(!addOpen)}>
+          Add link
+        </button>
+        <label className={styles.themeToggle}>
+          <input type="checkbox" checked={darkMode} onChange={(event) => changeTheme(event.target.checked)} />
+          Dark mode
+        </label>
       </header>
 
       {addOpen && (
@@ -233,7 +215,7 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
               Title (optional)
               <input name="title" type="text" value={linkTitle} onChange={(event) => setLinkTitle(event.target.value)} />
             </label>
-            <button type="submit">{isSaving ? "Saving…" : "Save"}</button>
+            <button type="submit">{isSaving ? "Saving…" : "Save link"}</button>
             <button type="button" onClick={() => { setAddOpen(false); addButtonRef.current?.focus(); }}>Cancel</button>
           </fieldset>
           {!isSaving && saveResult && !saveResult.ok && (
@@ -242,155 +224,144 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
         </form>
       )}
 
-
       <div className={styles.toolbar}>
-      <nav className={styles.sourceFilters} aria-label="Filter collection by source">
-        {sources.map((value) => (
-          <button key={value} type="button" disabled={busy} aria-pressed={source === value}
-            onClick={() => void navigate(() => { setSource(value); setSelectedId(undefined); setDetailOpen(false); })}>
-            {value === "all" ? "All sources" : value === "website" ? "Websites" : sourceLabels[value]}
-          </button>
-        ))}
-      </nav>
-        <button type="button" className={styles.searchToggle} disabled={busy}
-          aria-expanded={searchOpen} aria-controls="collection-search-form" onClick={() => setSearchOpen(!searchOpen)}>
-          Search
-        </button>
-      </div>
-      {searchOpen && (
-        <form id="collection-search-form" className={styles.searchForm} role="search" onSubmit={(event) => { event.preventDefault(); applySearch(searchText); }}>
+        <nav className={styles.sourceFilters} aria-label="Filter collection by source">
+          {sources.map((value) => (
+            <button key={value} type="button" disabled={busy} aria-pressed={source === value}
+              onClick={() => void navigate(() => { setSource(value); setSelectedId(undefined); setDetailOpen(false); })}>
+              {value === "all" ? "All sources" : value === "website" ? "Websites" : sourceLabels[value]}
+            </button>
+          ))}
+        </nav>
+        <form className={styles.searchForm} role="search" onSubmit={(event) => { event.preventDefault(); applySearch(searchText); }}>
           <label htmlFor="collection-search" className="sr-only">Search titles, saved text, and notes</label>
-          <input ref={searchInputRef} id="collection-search" type="search" value={searchText} disabled={busy}
-            onChange={(event) => setSearchText(event.target.value)} placeholder="Titles, saved text, notes" />
+          <input id="collection-search" type="search" value={searchText} disabled={busy}
+            onChange={(event) => setSearchText(event.target.value)} placeholder="Search links and notes" />
           <button type="submit" disabled={busy}>Search</button>
         </form>
-      )}
-      {search && (
-        <p className={styles.searchNotice} role="status">
-          {visibleItems.length} {visibleItems.length === 1 ? "result" : "results"} for “{search.query}” in this view.{" "}
-          <button type="button" disabled={busy} onClick={() => applySearch("")}>Clear search</button>
-        </p>
-      )}
-      {!addOpen && saveResult?.ok && selected?.id === saveResult.item.id && (
-        <p className={styles.saveMessage} role="status">
-          {saveResult.created ? "Link saved." : "Already saved; opened the existing item."}
-        </p>
-      )}
+      </div>
       <nav className={styles.filters} aria-label="Filter collection by status">
         {filters.map((status) => (
           <button key={status} type="button" disabled={busy} aria-pressed={filter === status}
             onClick={() => void navigate(() => { setFilter(status); setSelectedId(undefined); setDetailOpen(false); })}>
-            {statusLabels[status]}
-            <span>({status === "all" ? searchItems.length : searchItems.filter((item) => item.status === status).length})</span>
+            {statusLabels[status]} <span>({status === "all" ? searchItems.length : searchItems.filter((item) => item.status === status).length})</span>
           </button>
         ))}
       </nav>
+      {search && (
+        <p className={styles.notice} role="status">
+          {visibleItems.length} {visibleItems.length === 1 ? "result" : "results"} for “{search.query}” in this view.{" "}
+          <button type="button" className={styles.textButton} disabled={busy} onClick={() => applySearch("")}>Clear search</button>
+        </p>
+      )}
       {skipped.size > 0 && (
-        <p className={styles.sessionNotice}>
-          {skipped.size} skipped this session. <button type="button" disabled={busy} onClick={() => void navigate(() => {
+        <p className={styles.notice}>
+          {skipped.size} skipped this session. <button type="button" className={styles.textButton} disabled={busy} onClick={() => void navigate(() => {
             setSkipped(new Set()); setFilter("to_explore"); setSelectedId(undefined); setDetailOpen(false);
           })}>Start new session</button>
         </p>
       )}
+      {!addOpen && saveResult?.ok && selected?.id === saveResult.item.id && (
+        <p className={styles.notice} role="status">
+          {saveResult.created ? "Link saved." : "Already saved; opened the existing item."}
+        </p>
+      )}
 
       <div className={styles.workspace}>
-        <section ref={queueRef} tabIndex={-1} className={styles.queue} aria-label="Saved items">
-          <h1 className="sr-only">Saved items</h1>
-          <p className={styles.orderLabel}>{hasBookmarkOrder ? sourceItems[0].sourceSortIndex === null ? "New links, then bookmarked" : "Bookmark order (newest first)" : "Added to Followthrough"}</p>
-          <ul className={styles.itemList}>
-            {visibleItems.map((item) => {
-              const rating = drafts[item.id] ? drafts[item.id].rating : item.rating;
-              return (
-                <li key={item.id}>
-                  <button ref={selected?.id === item.id ? selectedItemRef : undefined} type="button" className={styles.item} disabled={busy} aria-current={selected?.id === item.id ? "true" : undefined}
-                    onClick={() => void navigate(() => { setSelectedId(item.id); setDetailOpen(true); setFocusRequest({ scope: "mobile", itemId: item.id }); })}>
-                    <span className={styles.itemMeta}>{sourceLabels[item.source]}</span>
-                    <span className={styles.itemTitle}>{item.title}</span>
-                    {rating !== null && (
-                      <span className={styles.smallRating} aria-label={`${rating} out of 5 usefulness`}>
-                        {ratings.map((value) => <Star key={value} filled={value <= rating} />)}
-                      </span>
-                    )}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          {visibleItems.length === 0 && <p className={styles.empty}>
-            {search ? "No matches in this view. Try All sources or All, or clear the search." : `No items in this view${skipped.size ? " for this session" : ""}.`}
-          </p>}
-        </section>
-
-        <section className={styles.detail} aria-label="Selected item" aria-labelledby={selected ? "review-item-title" : undefined}>
-          {selected && draft ? (
-            <>
-              <button type="button" disabled={busy} className={styles.mobileBack} onClick={() => void navigate(() => { setDetailOpen(false); setFocusRequest({ scope: "mobile", itemId: selected.id }); })}>← Back to items</button>
-              <div>
-                <h2 ref={detailTitleRef} tabIndex={-1} id="review-item-title" className={styles.detailTitle}>{selected.title}</h2>
-                <div className={styles.detailMeta}>
-                  <span data-source={selected.source}>{sourceLabels[selected.source]}</span>
-                  {selected.author && <span>· {selected.author}</span>}
-                  <span className={styles.status}>{statusLabels[selected.status]}</span>
-                </div>
-                <p className={styles.addedAt}>Added to Followthrough · <time dateTime={selected.addedAt}>{formatAddedTimestamp(selected.addedAt)}</time></p>
-                <div className={styles.originalRow}>
-                  <a href={selected.originalUrl} target="_blank" rel="noopener noreferrer" className={styles.originalLink}>
-                    {selected.source === "youtube" ? "Watch video" : selected.source === "website" ? "Open website" : "Open original"}
-                    <span className="sr-only"> ({selected.isDemo ? "example link, " : ""}opens in a new tab)</span>
+      <section ref={queueRef} tabIndex={-1} className={styles.queue} aria-label="Saved items">
+        <h1 className="sr-only">Saved links</h1>
+        <ul className={styles.itemList}>
+          {visibleItems.map((item) => {
+            const rating = drafts[item.id] ? drafts[item.id].rating : item.rating;
+            return (
+              <li key={item.id} className={styles.item}>
+                <button ref={selected?.id === item.id ? selectedItemRef : undefined} type="button" className={styles.itemTitle} disabled={busy}
+                  aria-current={selected?.id === item.id ? "true" : undefined}
+                  onClick={() => void navigate(() => { setSelectedId(item.id); setDetailOpen(true); setFocusRequest({ itemId: item.id }); })}>
+                  {item.title}
+                </button>
+                <div className={styles.itemMeta}>
+                  <span>{sourceLabels[item.source]}{item.author ? ` — ${item.author}` : ""}</span>
+                  <a href={item.originalUrl} target="_blank" rel="noopener noreferrer">
+                    original<span className="sr-only"> ({item.isDemo ? "example link, " : ""}opens in a new tab)</span>
                   </a>
+                  <span>{statusLabels[item.status]}</span>
+                  {rating !== null && <span>Rated {rating}/5</span>}
                 </div>
-                {selected.gist && <section className={styles.savedContent} aria-label="Generated summary"><p>{selected.gist}</p></section>}
-              </div>
+              </li>
+            );
+          })}
+        </ul>
+        {visibleItems.length === 0 && <p className={styles.empty}>
+          {search ? "No matches in this view. Try All sources or All, or clear the search." : `No items in this view${skipped.size ? " for this session" : ""}.`}
+        </p>}
+      </section>
 
-              <section className={styles.review} aria-label="Your review">
-                <p id="review-requirements" className={styles.reviewNotice}>Ratings and notes autosave. Finish requires both.</p>
-                <fieldset className={styles.ratingField} disabled={busy}>
-                  <legend>Rating <span>(required to finish)</span></legend>
-                  <div className={styles.ratingLine}>
-                    <div className={styles.stars}>
-                      {ratings.map((value) => (
-                        <label key={value} className={styles.star} data-filled={draft.rating !== null && value <= draft.rating}>
-                          <input type="radio" name={`rating-${selected.id}`} value={value} checked={draft.rating === value}
-                            onChange={() => updateDraft({ rating: value })} aria-label={`${value} ${value === 1 ? "star" : "stars"}`} />
-                          <Star filled={draft.rating !== null && value <= draft.rating} />
-                        </label>
-                      ))}
-                    </div>
-                    <span className={styles.ratingValue} aria-live="polite">{draft.rating === null ? "" : `${draft.rating}/5`}</span>
-                  </div>
-                  <p className="sr-only">1 means not useful to you; 5 means very useful.</p>
-                </fieldset>
-
-                <label htmlFor="review-note" className={styles.noteLabel}>Note <span>(required to finish)</span></label>
-                <textarea id="review-note" value={draft.takeaway} disabled={busy} onChange={(event) => updateDraft({ takeaway: event.target.value })}
-                  onBlur={() => { void flush(selected); }} rows={3} aria-describedby="review-requirements review-save-status" />
-                <p id="review-save-status" className={styles.saveMessage} role={reviewState?.phase === "error" ? "alert" : "status"}>
-                  {reviewState?.phase === "error" ? reviewState.error : reviewState?.phase === "saving" ? "Saving…" : "Saved"}
-                  {reviewState?.phase === "error" && <><span> </span><button type="button" className={styles.retryButton} disabled={busy} onClick={() => void navigate(() => undefined)}>Retry save</button></>}
-                </p>
-                <div className={styles.actions}>
-                  <button type="button" disabled={busy || !canFinish || selected.status === "finished"} className={styles.finishButton} onClick={() => void decide("finish")}>
-                    {selected.status === "finished" ? "Finished" : "Finish"}
-                  </button>
-                  <details key={selected.id} className={styles.moreActions}>
-                    <summary>More</summary>
-                    <div className={styles.moreMenu}>
-                      {selected.status !== "archived" && <button type="button" disabled={busy} onClick={() => void decide("archive")}>Archive</button>}
-                      {selected.status === "to_explore" && <button type="button" disabled={busy} onClick={() => void decide("skip")}>Skip for now</button>}
-                      <button type="button" className={styles.deleteButton} disabled={busy}
-                        onClick={() => startTransition(async () => { await decide("delete"); })}>Delete from Followthrough…</button>
-                    </div>
-                  </details>
-                </div>
-                {deleteState?.id === selected.id && (
-                  <p className={styles.saveMessage} role={deleteState.error ? "alert" : "status"}>
-                    {deleteState.error ?? "Deleting…"}
-                  </p>
-                )}
+      <section className={styles.detail} aria-label="Selected item" aria-labelledby={selected ? "review-item-title" : undefined}>
+        {selected && draft ? (
+          <>
+            <button type="button" disabled={busy} className={styles.backButton} onClick={() => void navigate(() => {
+              setDetailOpen(false); setFocusRequest({ itemId: selected.id });
+            })}>Back to saved links</button>
+            <h2 ref={detailTitleRef} tabIndex={-1} id="review-item-title" className={styles.detailTitle}>{selected.title}</h2>
+            <div className={styles.itemMeta}>
+              <span>{sourceLabels[selected.source]}{selected.author ? ` — ${selected.author}` : ""}</span>
+              <span>{statusLabels[selected.status]}</span>
+              <span>Added <time dateTime={selected.addedAt}>{formatAddedTimestamp(selected.addedAt)}</time></span>
+            </div>
+            <p className={styles.originalRow}>
+              <a href={selected.originalUrl} target="_blank" rel="noopener noreferrer">
+                {selected.originalUrl}
+                <span className="sr-only"> ({selected.isDemo ? "example link, " : ""}opens in a new tab)</span>
+              </a>
+            </p>
+            {selected.gist && (
+              <section className={styles.savedContent} aria-label="Generated summary">
+                <h3>Summary <span>(generated)</span></h3>
+                <p>{selected.gist}</p>
               </section>
-            </>
-          ) : <p className={styles.empty}>Select an item to see its content and review.</p>}
-        </section>
+            )}
+            <section className={styles.review} aria-label="Your review">
+              <fieldset className={styles.ratingField} disabled={busy}>
+                <legend>Usefulness <span>(1 = not useful, 5 = very useful)</span></legend>
+                <div className={styles.ratingChoices}>
+                  {ratings.map((value) => (
+                    <label key={value}>
+                      <input type="radio" name={`rating-${selected.id}`} value={value} checked={draft.rating === value}
+                        onChange={() => updateDraft({ rating: value })} aria-label={`${value} out of 5`} />
+                      {value}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <label htmlFor="review-note" className={styles.noteLabel}>Your notes</label>
+              <textarea id="review-note" value={draft.takeaway} disabled={busy} onChange={(event) => updateDraft({ takeaway: event.target.value })}
+                onBlur={() => { void flush(selected); }} rows={5} aria-describedby="review-requirements review-save-status" />
+              <div className={styles.reviewFeedback}>
+                <p id="review-requirements">Rating and notes save automatically. Both are required to finish.</p>
+                <p id="review-save-status" role={reviewState?.phase === "error" ? "alert" : "status"}>
+                  {reviewState?.phase === "error" ? reviewState.error : reviewState?.phase === "saving" ? "Saving…" : "Saved"}
+                  {reviewState?.phase === "error" && <> <button type="button" className={styles.textButton} disabled={busy} onClick={() => void navigate(() => undefined)}>Retry save</button></>}
+                </p>
+              </div>
+              <div className={styles.actions}>
+                <button type="button" disabled={busy || !canFinish || selected.status === "finished"} onClick={() => void decide("finish")}>
+                  {selected.status === "finished" ? "Finished" : "Finish"}
+                </button>
+                {selected.status !== "archived" && <button type="button" disabled={busy} onClick={() => void decide("archive")}>Archive</button>}
+                {selected.status === "to_explore" && <button type="button" disabled={busy} onClick={() => void decide("skip")}>Skip for now</button>}
+                <button type="button" className={styles.deleteButton} disabled={busy}
+                  onClick={() => startTransition(async () => { await decide("delete"); })}>Delete link…</button>
+              </div>
+              {deleteState?.id === selected.id && (
+                <p className={styles.saveMessage} role={deleteState.error ? "alert" : "status"}>
+                  {deleteState.error ?? "Deleting…"}
+                </p>
+              )}
+            </section>
+          </>
+        ) : <p className={styles.empty}>Select a saved link to read and review it.</p>}
+      </section>
       </div>
     </div>
   );

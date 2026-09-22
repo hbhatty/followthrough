@@ -15,7 +15,6 @@
     "seed:x": "tsx scripts/seed-x.ts"
   },
   "dependencies": {
-    "@fontsource/ibm-plex-sans": "5.3.0",
     "better-sqlite3": "13.0.3",
     "next": "16.3.5",
     "react": "19.3.0",
