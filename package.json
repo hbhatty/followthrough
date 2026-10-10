@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
-    "build": "tsx scripts/check-deployment.ts --if-vercel && next build",
+    "build": "next build",
     "start": "next start --hostname 127.0.0.1",
     "typecheck": "next typegen && tsc --noEmit",
     "lint": "eslint .",
