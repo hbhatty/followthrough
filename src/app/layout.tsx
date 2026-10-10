@@ -2,10 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: {
-    default: "Followthrough — your saved collection",
-    template: "%s · Followthrough",
-  },
+  title: "followthrough",
   description: "Save links, rate their usefulness, and keep your notes.",
   robots: { index: false, follow: false },
 };

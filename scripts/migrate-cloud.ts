@@ -36,7 +36,7 @@ async function validateSchema(database: Pick<Client, "execute">, isTarget = fals
   if (!isTarget) {
     const version = await database.execute("PRAGMA user_version");
     if (Number(version.rows[0].user_version) !== 3) {
-      throw new MigrationError("Migration requires schema version 3. Upgrade older source databases with Followthrough before copying.");
+      throw new MigrationError("Migration requires schema version 3. Upgrade older source databases with followthrough before copying.");
     }
   }
   const schema = await database.execute("SELECT name, type FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' AND name != '_schema_version' AND type IN ('table', 'trigger', 'view') ORDER BY name");
@@ -47,7 +47,7 @@ async function validateSchema(database: Pick<Client, "execute">, isTarget = fals
   const tableList = await database.execute("PRAGMA table_list");
   for (const table of tables) {
     const definition = tableList.rows.find((row) => row.schema === "main" && row.name === table.name);
-    if (!definition || Number(definition.strict) !== 1) throw new MigrationError("Expected strict Followthrough tables.");
+    if (!definition || Number(definition.strict) !== 1) throw new MigrationError("Expected strict followthrough tables.");
     const info = await database.execute(`PRAGMA table_xinfo(${table.name})`);
     const nullable: readonly string[] = table.nullable;
     if (info.rows.length !== table.columns.length || info.rows.some((row, index) => {
@@ -57,14 +57,14 @@ async function validateSchema(database: Pick<Client, "execute">, isTarget = fals
         Number(row.pk) !== (index === 0 ? 1 : 0) ||
         Number(row.notnull) !== (nullable.includes(column) ? 0 : 1);
     })) {
-      throw new MigrationError("Unexpected Followthrough columns; refusing a partial copy.");
+      throw new MigrationError("Unexpected followthrough columns; refusing a partial copy.");
     }
     const foreignKeys = await database.execute(`PRAGMA foreign_key_list(${table.name})`);
     const child = table.name === "generated_enrichment" || table.name === "personal_reviews";
     if (foreignKeys.rows.length !== (child ? 1 : 0) || (child && foreignKeys.rows.some((row) =>
       row.table !== "source_items" || row.from !== "item_id" || row.to !== "id" || row.on_delete !== "CASCADE"
     ))) {
-      throw new MigrationError("Unexpected Followthrough foreign-key definitions.");
+      throw new MigrationError("Unexpected followthrough foreign-key definitions.");
     }
   }
   const indexes = await database.execute("PRAGMA index_list(source_items)");

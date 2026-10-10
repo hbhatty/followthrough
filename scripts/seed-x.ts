@@ -84,7 +84,7 @@ async function seed(): Promise<void> {
   delete sourceMetadata.bookmarks;
   delete sourceMetadata.enrichment_metadata;
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  const addedAt = new Date().toISOString(); // Added to Followthrough, not a bookmark timestamp.
+  const addedAt = new Date().toISOString(); // Added to followthrough, not a bookmark timestamp.
   const database = await getDatabase().catch(() => {
     throw new Error("Bookmark seeding failed. Check database configuration and connectivity.");
   });

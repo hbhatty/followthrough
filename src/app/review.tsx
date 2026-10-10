@@ -116,7 +116,7 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
   async function decide(command: "finish" | "archive" | "skip" | "delete") {
     if (!selected || navigationLock.current) return;
     if (command === "delete" && !window.confirm(
-      `Delete “${selected.title}” from Followthrough?\n\nThis permanently removes the saved item, rating, and notes. It cannot be undone. The original website is not affected.`,
+      `Delete “${selected.title}” from followthrough?\n\nThis permanently removes the saved item, rating, and notes. It cannot be undone. The original website is not affected.`,
     )) return;
     navigationLock.current = true;
     setBusy(true);
@@ -193,7 +193,7 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
   return (
     <div className={styles.collection} data-review-collection data-detail-open={detailOpen && !!selected} data-theme={darkMode ? "dark" : "light"}>
       <header className={styles.header}>
-        <Link href="/" className={styles.wordmark}>Followthrough</Link>
+        <Link href="/" className={styles.wordmark}>followthrough</Link>
         <button ref={addButtonRef} type="button" className={styles.textButton} disabled={busy}
           aria-expanded={addOpen} aria-controls="add-link-form" onClick={() => setAddOpen(!addOpen)}>
           Add link
