@@ -3,26 +3,28 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=22"
+    "node": ">=22.9"
   },
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
-    "build": "next build",
+    "build": "tsx scripts/check-deployment.ts --if-vercel && next build",
     "start": "next start --hostname 127.0.0.1",
     "typecheck": "next typegen && tsc --noEmit",
     "lint": "eslint .",
-    "seed:demo": "tsx scripts/seed-demo.ts",
-    "seed:x": "tsx scripts/seed-x.ts"
+    "test": "node --import tsx --test scripts/*.test.ts",
+    "check:deployment": "node --env-file-if-exists=.env.local --import tsx scripts/check-deployment.ts",
+    "migrate:cloud": "node --env-file-if-exists=.env.local --import tsx scripts/migrate-cloud.ts",
+    "seed:demo": "node --env-file-if-exists=.env.local --import tsx scripts/seed-demo.ts",
+    "seed:x": "node --env-file-if-exists=.env.local --import tsx scripts/seed-x.ts"
   },
   "dependencies": {
-    "better-sqlite3": "13.0.3",
+    "@libsql/client": "^0.18.0",
     "next": "16.3.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "server-only": "0.0.1"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

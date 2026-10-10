@@ -35,7 +35,7 @@ function postUrl(value: unknown, field: string): string {
   throw new Error(`${field} must be an HTTPS X or Twitter URL.`);
 }
 
-function seed(): void {
+async function seed(): Promise<void> {
   const [path, ...extra] = process.argv.slice(2);
   if (!path || extra.length) throw new Error("Usage: npm run seed:x -- /path/to/enriched-export.json");
   const bytes = readFileSync(path);
@@ -85,53 +85,61 @@ function seed(): void {
   delete sourceMetadata.enrichment_metadata;
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   const addedAt = new Date().toISOString(); // Added to Followthrough, not a bookmark timestamp.
-  const database = getDatabase();
+  const database = await getDatabase().catch(() => {
+    throw new Error("Bookmark seeding failed. Check database configuration and connectivity.");
+  });
 
   try {
-    const insertSource = database.prepare(`
-      INSERT INTO source_items (
-        id, source, external_id, title, author, saved_text, original_url, added_at,
-        source_sort_index, snapshot_json
-      ) VALUES (?, 'x', ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT (source, external_id) DO NOTHING
-    `);
-    const insertEnrichment = database.prepare(`
-      INSERT INTO generated_enrichment (item_id, gist, snapshot_json) VALUES (?, ?, ?)
-    `);
-    const insertReview = database.prepare(`
-      INSERT INTO personal_reviews (item_id, status) VALUES (?, 'to_explore')
-    `);
-    const insertMetadata = database.prepare(`
-      INSERT INTO bootstrap_exports (sha256, seeded_at, source_metadata_json, enrichment_metadata_json)
-      VALUES (?, ?, ?, ?) ON CONFLICT (sha256) DO NOTHING
-    `);
-    const removeDemo = database.prepare("DELETE FROM source_items WHERE is_demo = 1");
-    const result = database.transaction(() => {
-      const removedDemo = removeDemo.run().changes;
-      let inserted = 0;
+    const transaction = await database.transaction("write");
+    let inserted = 0;
+    let removedDemo = 0;
+    try {
+      removedDemo = (await transaction.execute("DELETE FROM source_items WHERE is_demo = 1")).rowsAffected;
       for (const item of items) {
-        const result = insertSource.run(
-          item.id, item.externalId, item.title, item.author, item.savedText,
-          item.originalUrl, addedAt, item.sourceSortIndex, item.sourceSnapshot,
-        );
+        const result = await transaction.execute({
+          sql: `INSERT INTO source_items (
+            id, source, external_id, title, author, saved_text, original_url, added_at,
+            source_sort_index, snapshot_json
+          ) VALUES (?, 'x', ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (source, external_id) DO NOTHING`,
+          args: [item.id, item.externalId, item.title, item.author, item.savedText,
+            item.originalUrl, addedAt, item.sourceSortIndex, item.sourceSnapshot],
+        });
         // Bootstrap only: never replace an existing item or its personal review.
-        if (!result.changes) continue;
-        insertEnrichment.run(item.id, item.gist, item.enrichmentSnapshot);
-        insertReview.run(item.id);
+        if (!result.rowsAffected) continue;
+        await transaction.execute({
+          sql: "INSERT INTO generated_enrichment (item_id, gist, snapshot_json) VALUES (?, ?, ?)",
+          args: [item.id, item.gist, item.enrichmentSnapshot],
+        });
+        await transaction.execute({
+          sql: "INSERT INTO personal_reviews (item_id, status) VALUES (?, 'to_explore')",
+          args: [item.id],
+        });
         inserted += 1;
       }
-      insertMetadata.run(sha256, addedAt, JSON.stringify(sourceMetadata), JSON.stringify(enrichmentMetadata));
-      return { inserted, skipped: items.length - inserted, removedDemo };
-    }).immediate();
+      await transaction.execute({
+        sql: `INSERT INTO bootstrap_exports (sha256, seeded_at, source_metadata_json, enrichment_metadata_json)
+          VALUES (?, ?, ?, ?) ON CONFLICT (sha256) DO NOTHING`,
+        args: [sha256, addedAt, JSON.stringify(sourceMetadata), JSON.stringify(enrichmentMetadata)],
+      });
+      await transaction.commit();
+    } catch {
+      if (!transaction.closed) await transaction.rollback();
+      throw new Error("Bookmark seeding failed. Check database configuration and connectivity.");
+    } finally {
+      transaction.close();
+    }
+    const result = { inserted, skipped: items.length - inserted, removedDemo };
     console.log(`Seeded ${result.inserted} X bookmark(s); left ${result.skipped} existing item(s) unchanged; removed ${result.removedDemo} fictional item(s).`);
+  } catch {
+    throw new Error("Bookmark seeding failed. Check database configuration and connectivity.");
   } finally {
     database.close();
   }
 }
 
-try {
-  seed();
-} catch (error) {
-  console.error(error instanceof Error ? error.message : "Bookmark seeding failed.");
+seed().catch((error: unknown) => {
+  // Validation errors are constructed locally; never print a transport error or its URL.
+  console.error(error instanceof Error && !("code" in error) ? error.message : "Bookmark seeding failed.");
   process.exitCode = 1;
-}
+});

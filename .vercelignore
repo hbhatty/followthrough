@@ -1,0 +1,16 @@
+private-data/
+data/
+backups/
+.env*
+**/*.db
+**/*.db-*
+**/*.sqlite*
+**/xarchive*.json
+**/xarchive*.csv
+**/xarchive*.md
+PROJECT_BRIEF.md
+CONTEXT.md
+.git/
+node_modules/
+.next/
+*.tsbuildinfo

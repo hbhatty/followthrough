@@ -6,5 +6,5 @@ export const dynamic = "force-dynamic";
 
 export default async function CollectionPage() {
   const initialDarkMode = (await cookies()).get("followthrough-dark")?.value === "1";
-  return <ReviewCollection items={listItems()} initialDarkMode={initialDarkMode} />;
+  return <ReviewCollection items={await listItems()} initialDarkMode={initialDarkMode} />;
 }

@@ -2,9 +2,9 @@
 
 Turn saved links into things learned.
 
-A personal local web app for working through saved web links, including X bookmarks, YouTube videos, and other websites, recording useful takeaways, and finding them again.
+A personal web app for working through saved web links, including X bookmarks, YouTube videos, and other websites, recording useful takeaways, and finding them again. Run locally or deploy privately to Vercel with a Turso database.
 
-The app uses Next.js, React, TypeScript, and SQLite. It supports source/status filters, search, persistent ratings and notes, Finish/Archive/Skip actions, link saving and deletion, and a one-time seed command for an enriched X export.
+The app uses Next.js, React, TypeScript, and SQLite through `@libsql/client`. It supports source/status filters, search, persistent ratings and notes, Finish/Archive/Skip actions, link saving and deletion, and a one-time seed command for an enriched X export.
 
 ## Review your collection
 
@@ -33,7 +33,7 @@ This form does not fetch page titles, authors, text, summaries, or media. If the
 
 ## Run locally
 
-Requires Node.js 22 or newer and npm. Run from the project directory:
+Requires Node.js 22.9 or newer and npm. Run from the project directory:
 
 ```sh
 npm ci
@@ -51,6 +51,50 @@ npm run build
 npm run start
 ```
 
+## Deploy privately to Vercel
+
+Use a Vercel-provided `*.vercel.app` address; buying a domain is optional. The app runs on Vercel, and your collection lives in Turso rather than on your computer. Internet access is required. Provider plan limits and charges apply independently.
+
+### 1. Create the hosted database
+
+Create an **empty** database in [Turso](https://turso.tech/) and obtain its database URL and read/write database token. Copy `.env.example` to the Git-ignored `.env.local`, then set `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. Never prefix credentials with `NEXT_PUBLIC_`, commit them, or paste them into an issue.
+
+Stop the local app while transferring the collection, then run:
+
+```sh
+npm run migrate:cloud -- "/absolute/path/to/private-data/followthrough.sqlite"
+```
+
+The command reads a consistent SQLite snapshot, including committed WAL data, without changing the local collection. It validates the schema, copies source items, generated enrichment, reviews and export provenance, compares every copied value, and commits the data together. It refuses a non-empty destination rather than merging or overwriting it; failures roll back the data transfer. Logs show counts only. The source must already be schema version 3; older databases must first be upgraded by running the local app without Turso variables.
+
+Keep the local database and its existing backups as your pre-migration copy. Once migrated, use the hosted collection as the authoritative copy: subsequent cloud edits do not sync back to the old local file. Do not rerun the seed commands merely to deploy.
+
+### 2. Configure private access before publishing
+
+Import this repository into a Vercel project using the Next.js preset and Node.js 22.x or newer. In **Settings → Deployment Protection**, enable **Vercel Authentication → All Deployments**. Standard Protection is insufficient: it leaves production domains public. Keep protection enabled, restrict project membership, and do not create public exceptions or shareable bypass links. See [Vercel's protection documentation](https://vercel.com/docs/deployment-protection).
+
+Set these server-side environment variables on the Vercel project:
+
+| Variable | Value |
+| --- | --- |
+| `TURSO_DATABASE_URL` | Hosted `libsql://` or `https://` database URL |
+| `TURSO_AUTH_TOKEN` | Database read/write token |
+| `VERCEL_API_TOKEN` | Vercel API token with access to read this project's settings |
+| `VERCEL_PROJECT_ID` | Actual `prj_…` project ID from project settings; Vercel may already expose it |
+| `VERCEL_TEAM_ID` | Owning team ID when required to scope the API request |
+
+Set the database credentials for **Production**. If you want preview deployments, give Preview a separate disposable Turso database so preview actions cannot change your real collection. The protection-check variables are required for every Vercel build environment.
+
+`npm run build` checks the project's protection settings through Vercel's API when `VERCEL=1`. Missing credentials, an inaccessible API, a mismatched project ID, or anything other than All Deployments protection stops the build. An initial import may therefore fail until these settings are configured; then redeploy. For a manual check with values in `.env.local`, run `npm run check:deployment`.
+
+This is a **build-time check**, not an application login or continuous security monitor. Vercel enforces authentication on page requests and Server Actions. Disabling protection after deployment would expose the app; keep it enabled. API-token expiry blocks future builds, not the running app.
+
+### 3. Deploy and verify
+
+Deploy the configured project, sign in with your Vercel account, and bookmark its production address. Confirm the collection and notes are present, save a review and reload, and open the same address in a signed-out/private browser window: it must require Vercel authentication before showing any collection data. Verify both the production domain and deployment URL.
+
+Vercel must have both Turso variables. It never falls back to a local file database there. Local development still defaults to `private-data/followthrough.sqlite` when neither variable is set; setting either requires a complete hosted configuration. Seeding and migration commands load `.env.local`, so check the destination before running them.
+
 ## One-time X bootstrap
 
 The enriched JSON is a shortcut for establishing an existing bookmark collection, not the ongoing saving workflow. Keep the file outside this repository and back up an existing database before seeding:
@@ -67,9 +111,9 @@ Deleting an item does not edit the original export. Running the seed command aga
 
 ## Storage and privacy
 
-Next.js reads and writes SQLite server-side through `better-sqlite3`. Source content, generated enrichment, and personal reviews are stored separately. The default database is `private-data/followthrough.sqlite`; `DATABASE_PATH` can override it with an absolute path.
+Next.js reads and writes SQLite server-side through `@libsql/client`. Source content, generated enrichment, and personal reviews are stored separately. Without Turso configuration, the default database is `private-data/followthrough.sqlite`; `DATABASE_PATH` can override it with an absolute path. With Turso configuration, the database is hosted and survives Vercel deployments.
 
-The database survives app restarts. Its directory, SQLite sidecars, backups, local environment files, and named X exports are excluded from Git and production dependency traces. This is local storage, not encryption; there is no authentication layer. Do not expose the server publicly or put personal exports in the repository. Personal bootstrap data stays in the local database, not in application fixtures or source files.
+Local database files, SQLite sidecars, backups, environment files, and named X exports are excluded from Git, Vercel CLI uploads, and production dependency traces. Local storage is not encryption. Hosted deployment sends your saved content and reviews to Turso and serves them through Vercel. There is no application-level authentication: use Vercel Authentication for all deployment URLs and never expose the local server publicly. Review backup/restore controls remain unimplemented; the migration command is a one-time transfer, not ongoing backup or sync.
 
 The app does not automatically fetch remote pages, media, or fonts. In the X view, manually added links appear first in added-to-Followthrough order, followed by seeded bookmarks in exact descending bookmark-key order. These are separate groups, not a comparison between timestamps and opaque bookmark keys. YouTube, Websites, and All sources use added-to-Followthrough order. Seeding time is not presented as a bookmark timestamp.
 
@@ -79,6 +123,7 @@ The displayed Added to Followthrough timestamp comes from `added_at`: for manual
 
 ```sh
 npm run typecheck
+npm test
 npm run lint
 npm run build
 ```

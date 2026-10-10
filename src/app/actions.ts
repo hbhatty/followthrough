@@ -14,7 +14,7 @@ export async function addLink(formData: FormData): Promise<SaveLinkResult> {
   }
   let result: SaveLinkResult;
   try {
-    result = saveLink(url, title);
+    result = await saveLink(url, title);
   } catch {
     return { ok: false, error: "The link could not be saved. Please try again." };
   }
@@ -31,7 +31,7 @@ export async function updateReview(
 ): Promise<ReviewResult> {
   let result: ReviewResult;
   try {
-    result = saveReview(itemId, draft, command);
+    result = await saveReview(itemId, draft, command);
   } catch {
     return { ok: false, error: "The review could not be saved. Please try again." };
   }
@@ -44,7 +44,7 @@ export async function updateReview(
 export async function deleteLink(itemId: string): Promise<DeleteResult> {
   let result: DeleteResult;
   try {
-    result = deleteItem(itemId);
+    result = await deleteItem(itemId);
   } catch {
     return { ok: false, error: "The link could not be deleted. Please try again." };
   }

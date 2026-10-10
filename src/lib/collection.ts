@@ -1,10 +1,8 @@
 import "server-only";
 
-import type Database from "better-sqlite3";
-import { getDatabase } from "./database";
+import type { Client, Row } from "@libsql/client";
+import { withDatabase } from "./database";
 import type { CollectionItem, DeleteResult } from "./types";
-
-type ItemRow = Omit<CollectionItem, "isDemo"> & { isDemo: number };
 
 const itemSelection = `
   SELECT
@@ -28,43 +26,51 @@ const itemSelection = `
 `;
 const ordering = "ORDER BY item.added_at DESC, item.id ASC";
 
-interface CollectionQueries {
-  all: Database.Statement<[], ItemRow>;
-  item: Database.Statement<[string], ItemRow>;
-  delete: Database.Statement<[string]>;
+function toCollectionItem(row: Row): CollectionItem {
+  return {
+    id: String(row.id),
+    source: row.source as CollectionItem["source"],
+    externalId: String(row.externalId),
+    sourceSortIndex: row.sourceSortIndex === null ? null : String(row.sourceSortIndex),
+    title: String(row.title),
+    author: String(row.author),
+    savedText: String(row.savedText),
+    gist: row.gist === null ? null : String(row.gist),
+    originalUrl: String(row.originalUrl),
+    addedAt: String(row.addedAt),
+    status: row.status as CollectionItem["status"],
+    rating: row.rating === null ? null : Number(row.rating),
+    takeaway: row.takeaway === null ? null : String(row.takeaway),
+    isDemo: Number(row.isDemo) === 1,
+  };
 }
 
-const preparedQueries = new WeakMap<Database.Database, CollectionQueries>();
-
-function getQueries() {
-  const database = getDatabase();
-  let queries = preparedQueries.get(database);
-  if (!queries) {
-    queries = {
-      all: database.prepare<[], ItemRow>(`${itemSelection} ${ordering}`),
-      item: database.prepare<[string], ItemRow>(`${itemSelection} WHERE item.id = ?`),
-      delete: database.prepare<[string]>("DELETE FROM source_items WHERE id = ?"),
-    };
-    preparedQueries.set(database, queries);
-  }
-  return queries;
+export async function listItems(): Promise<CollectionItem[]> {
+  return withDatabase(async (database) => {
+    const { rows } = await database.execute(`${itemSelection} ${ordering}`);
+    return rows.map(toCollectionItem);
+  });
 }
 
-export function listItems(): CollectionItem[] {
-  const rows = getQueries().all.all();
-  return rows.map((row) => ({ ...row, isDemo: row.isDemo === 1 }));
+export async function getItem(
+  id: string,
+  executor?: Pick<Client, "execute">,
+): Promise<CollectionItem | undefined> {
+  if (!executor) return withDatabase((database) => getItem(id, database));
+  const { rows } = await executor.execute({
+    sql: `${itemSelection} WHERE item.id = ?`,
+    args: [id],
+  });
+  return rows[0] ? toCollectionItem(rows[0]) : undefined;
 }
 
-export function getItem(id: string): CollectionItem | undefined {
-  const row = getQueries().item.get(id);
-  return row ? { ...row, isDemo: row.isDemo === 1 } : undefined;
-}
-
-export function deleteItem(id: string): DeleteResult {
+export async function deleteItem(id: string): Promise<DeleteResult> {
   if (typeof id !== "string" || !id.trim()) {
     return { ok: false, error: "Choose a saved item to delete." };
   }
   // Foreign keys remove the item's enrichment and review in the same statement.
-  getQueries().delete.run(id);
-  return { ok: true };
+  return withDatabase(async (database): Promise<DeleteResult> => {
+    await database.execute({ sql: "DELETE FROM source_items WHERE id = ?", args: [id] });
+    return { ok: true };
+  });
 }

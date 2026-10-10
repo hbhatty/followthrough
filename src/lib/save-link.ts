@@ -2,14 +2,14 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { getItem } from "./collection";
-import { getDatabase } from "./database";
+import { withDatabase } from "./database";
 import type { CollectionItem } from "./types";
 
 export type SaveLinkResult =
   | { ok: true; item: CollectionItem; created: boolean }
   | { ok: false; error: string };
 
-export function saveLink(rawUrl: string, title: string): SaveLinkResult {
+export async function saveLink(rawUrl: string, title: string): Promise<SaveLinkResult> {
   let url: URL;
   try {
     url = new URL(rawUrl.trim());
@@ -50,27 +50,45 @@ export function saveLink(rawUrl: string, title: string): SaveLinkResult {
     }
   }
 
-  const database = getDatabase();
-  return database.transaction((): SaveLinkResult => {
-    const existing = database.prepare<[string, string], { id: string }>(
-      "SELECT id FROM source_items WHERE source = ? AND external_id = ?",
-    ).get(source, externalId);
-    if (existing) {
-      const item = getItem(existing.id);
-      if (!item) throw new Error("Existing saved link could not be read.");
-      return { ok: true, item, created: false };
-    }
+  return withDatabase(async (database): Promise<SaveLinkResult> => {
+    const transaction = await database.transaction("write");
+    try {
+      const { rows } = await transaction.execute({
+        sql: "SELECT id FROM source_items WHERE source = ? AND external_id = ?",
+        args: [source, externalId],
+      });
+      const existing = rows[0];
+      if (existing) {
+        const item = await getItem(String(existing.id), transaction);
+        if (!item) throw new Error("Existing saved link could not be read.");
+        await transaction.commit();
+        return { ok: true, item, created: false };
+      }
 
-    const id = randomUUID();
-    database.prepare(`
-      INSERT INTO source_items (
-        id, source, external_id, title, author, saved_text, original_url, added_at
-      ) VALUES (?, ?, ?, ?, '', '', ?, ?)
-    `).run(id, source, externalId, title.trim() || fallbackTitle, url.href, new Date().toISOString());
-    database.prepare("INSERT INTO generated_enrichment (item_id) VALUES (?)").run(id);
-    database.prepare("INSERT INTO personal_reviews (item_id, status) VALUES (?, 'to_explore')").run(id);
-    const item = getItem(id);
-    if (!item) throw new Error("New saved link could not be read.");
-    return { ok: true, item, created: true };
-  }).immediate();
+      const id = randomUUID();
+      await transaction.execute({ sql: `
+        INSERT INTO source_items (
+          id, source, external_id, title, author, saved_text, original_url, added_at
+        ) VALUES (?, ?, ?, ?, '', '', ?, ?)
+      `, args: [id, source, externalId, title.trim() || fallbackTitle, url.href, new Date().toISOString()] });
+      await transaction.execute({
+        sql: "INSERT INTO generated_enrichment (item_id) VALUES (?)",
+        args: [id],
+      });
+      await transaction.execute({
+        sql: "INSERT INTO personal_reviews (item_id, status) VALUES (?, 'to_explore')",
+        args: [id],
+      });
+      const item = await getItem(id, transaction);
+      if (!item) throw new Error("New saved link could not be read.");
+      await transaction.commit();
+      return { ok: true, item, created: true };
+    } finally {
+      try {
+        if (!transaction.closed) await transaction.rollback();
+      } finally {
+        transaction.close();
+      }
+    }
+  });
 }
