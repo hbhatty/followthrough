@@ -61,6 +61,8 @@ the seed command uses whichever database is configured in `.env.local`, so check
 
 the app is built with Next.js, React, TypeScript, SQLite through `@libsql/client`, and IBM Plex Sans.
 
+The browser-tab icon is a blue bookmark with a white checkmark, defined in `src/app/icon.svg`. Next.js automatically adds it to the page metadata.
+
 run the project checks with:
 
 ```sh
