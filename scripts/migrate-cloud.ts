@@ -39,7 +39,8 @@ async function validateSchema(database: Pick<Client, "execute">, isTarget = fals
       throw new MigrationError("Migration requires schema version 3. Upgrade older source databases with followthrough before copying.");
     }
   }
-  const schema = await database.execute("SELECT name, type FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' AND name != '_schema_version' AND type IN ('table', 'trigger', 'view') ORDER BY name");
+  // Request budgets are transient operational state, not personal collection data.
+  const schema = await database.execute("SELECT name, type FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' AND name != '_schema_version' AND NOT (name = '_title_lookup_budget' AND type = 'table') AND type IN ('table', 'trigger', 'view') ORDER BY name");
   const expectedNames = tables.map((table) => table.name).sort();
   if (schema.rows.length !== tables.length || schema.rows.some((row, index) => row.type !== "table" || row.name !== expectedNames[index])) {
     throw new MigrationError("Unexpected database schema; refusing to omit or alter data.");

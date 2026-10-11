@@ -11,7 +11,7 @@
     "start": "next start --hostname 127.0.0.1",
     "typecheck": "next typegen && tsc --noEmit",
     "lint": "eslint .",
-    "test": "node --import tsx --test scripts/*.test.ts",
+    "test": "node --conditions=react-server --import tsx --test scripts/*.test.ts",
     "check:deployment": "node --env-file-if-exists=.env.local --import tsx scripts/check-deployment.ts",
     "migrate:cloud": "node --env-file-if-exists=.env.local --import tsx scripts/migrate-cloud.ts",
     "seed:demo": "node --env-file-if-exists=.env.local --import tsx scripts/seed-demo.ts",
@@ -19,6 +19,8 @@
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
+    "htmlparser2": "^12.0.0",
+    "ipaddr.js": "^2.5.0",
     "next": "16.3.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",

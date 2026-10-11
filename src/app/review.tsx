@@ -4,8 +4,9 @@ import Link from "next/link";
 import { startTransition, useActionState, useEffect, useMemo, useRef, useState } from "react";
 import type { CollectionItem, ReviewDraft, StatusFilter } from "../lib/types";
 import type { SaveLinkResult } from "../lib/save-link";
+import { isXUrl, MAX_LINK_TITLE_LENGTH, MAX_LINK_URL_LENGTH, parseLinkUrl, type LinkTitleResult } from "../lib/link-url";
 import { formatAddedTimestamp, sourceLabels, statusLabels } from "./_lib/presentation";
-import { addLink } from "./actions";
+import { addLink, getLinkTitle } from "./actions";
 import { useReviews } from "./use-reviews";
 import styles from "./review.module.css";
 
@@ -33,8 +34,16 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const linkInputRef = useRef<HTMLInputElement>(null);
   const [deleteState, setDeleteState] = useState<{ id: string; error?: string } | null>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const titleFocusRequested = useRef(false);
   const [linkUrl, setLinkUrl] = useState("");
   const [linkTitle, setLinkTitle] = useState("");
+  const [lookupResult, setLookupResult] = useState<LinkTitleResult | null>(null);
+  const [titleFromLookup, setTitleFromLookup] = useState(false);
+  const parsedLink = parseLinkUrl(linkUrl);
+  const isXLink = parsedLink.ok && isXUrl(parsedLink.url);
+  const titleRequired = isXLink || lookupResult !== null;
+  const needsTitleLookup = !linkTitle.trim() && !titleRequired;
   const { drafts, saved, states, change, flush, act, remove } = useReviews();
   const sourceItems = useMemo(() => {
     const matching = items.map((item) => saved[item.id] ?? item)
@@ -150,9 +159,33 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
   const [saveResult, submitLink, isSaving] = useActionState<SaveLinkResult | null, FormData>(
     async (_previous, formData) => {
       if (navigationLock.current) return { ok: false, error: "Wait for the current review to save." };
+      const parsed = parseLinkUrl(String(formData.get("url") ?? ""));
+      if (!parsed.ok) return { ok: false, error: parsed.error };
+      const title = String(formData.get("title") ?? "").trim();
+      if (!title && (isXUrl(parsed.url) || lookupResult !== null)) {
+        return { ok: false, error: "Enter a title before saving this link." };
+      }
+      if (title.length > MAX_LINK_TITLE_LENGTH) {
+        return { ok: false, error: `Keep the title to ${MAX_LINK_TITLE_LENGTH} characters or fewer.` };
+      }
       navigationLock.current = true;
       setBusy(true);
       try {
+        if (!title) {
+          let result: LinkTitleResult;
+          try {
+            result = await getLinkTitle(parsed.url.href);
+          } catch {
+            result = { ok: false, error: "Could not reach the title lookup service." };
+          }
+          setLookupResult(result);
+          if (result.ok) {
+            setLinkTitle(result.title);
+            setTitleFromLookup(true);
+          }
+          titleFocusRequested.current = true;
+          return null;
+        }
         if (selected && !(await flush(selected))) {
           return { ok: false, error: "Your review could not be saved. Retry it before adding another link." };
         }
@@ -172,6 +205,8 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
           setFocusRequest({ itemId: result.item.id });
           setLinkUrl("");
           setLinkTitle("");
+          setLookupResult(null);
+          setTitleFromLookup(false);
           setAddOpen(false);
         }
         return result;
@@ -184,6 +219,24 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
     },
     null,
   );
+  const isLookingUp = isSaving && needsTitleLookup;
+
+  useEffect(() => {
+    if (busy || isSaving || !addOpen || !titleFocusRequested.current) return;
+    titleFocusRequested.current = false;
+    titleInputRef.current?.focus();
+  }, [busy, isSaving, addOpen, lookupResult]);
+
+  function changeLinkUrl(value: string) {
+    if (navigationLock.current) return;
+    setLinkUrl(value);
+    setLookupResult(null);
+    titleFocusRequested.current = false;
+    if (titleFromLookup) {
+      setLinkTitle("");
+      setTitleFromLookup(false);
+    }
+  }
 
   function changeTheme(checked: boolean) {
     setDarkMode(checked);
@@ -194,7 +247,7 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
     <div className={styles.collection} data-review-collection data-detail-open={detailOpen && !!selected} data-theme={darkMode ? "dark" : "light"}>
       <header className={styles.header}>
         <Link href="/" className={styles.wordmark}>followthrough</Link>
-        <button ref={addButtonRef} type="button" className={styles.textButton} disabled={busy}
+        <button ref={addButtonRef} type="button" className={styles.textButton} disabled={busy || isSaving}
           aria-expanded={addOpen} aria-controls="add-link-form" onClick={() => setAddOpen(!addOpen)}>
           Add link
         </button>
@@ -205,19 +258,41 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
       </header>
 
       {addOpen && (
-        <form id="add-link-form" className={styles.addLink} action={submitLink}>
+        <form id="add-link-form" className={styles.addLink} action={submitLink} aria-busy={isSaving}>
+          <p id="link-title-help" className={styles.addHelp}>
+            {isXLink
+              ? "X/Twitter links need a title you enter yourself. Enter it, then save."
+              : lookupResult !== null
+                ? "A title is required before this link can be saved."
+                : "Enter a title to save directly, or leave it blank and choose Find title. Review or edit the found title, then choose Save link."}
+          </p>
           <fieldset className={styles.addFields} disabled={busy || isSaving}>
             <label>
               URL
-              <input ref={linkInputRef} name="url" type="url" required placeholder="https://…" value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} />
+              <input ref={linkInputRef} name="url" type="url" required maxLength={MAX_LINK_URL_LENGTH}
+                placeholder="https://…" value={linkUrl} onChange={(event) => changeLinkUrl(event.target.value)} />
             </label>
             <label>
-              Title (optional)
-              <input name="title" type="text" value={linkTitle} onChange={(event) => setLinkTitle(event.target.value)} />
+              {titleRequired ? "Title (required)" : "Title"}
+              <input ref={titleInputRef} name="title" type="text" required={titleRequired}
+                maxLength={MAX_LINK_TITLE_LENGTH} pattern={".*\\S.*"} title="Enter a title that is not just spaces."
+                aria-describedby={`link-title-help link-title-status${lookupResult && !lookupResult.ok ? " link-title-error" : ""}`}
+                value={linkTitle} onChange={(event) => setLinkTitle(event.target.value)} />
             </label>
-            <button type="submit">{isSaving ? "Saving…" : "Save link"}</button>
+            <button type="submit">
+              {isLookingUp ? "Finding title…" : isSaving ? "Saving…" : needsTitleLookup ? "Find title" : "Save link"}
+            </button>
             <button type="button" onClick={() => { setAddOpen(false); addButtonRef.current?.focus(); }}>Cancel</button>
           </fieldset>
+          <p id="link-title-status" className={styles.saveMessage} role="status">
+            {isLookingUp ? "Finding the title. This does not save the link."
+              : lookupResult?.ok ? "Title found. Review or edit it, then save." : ""}
+          </p>
+          {lookupResult && !lookupResult.ok && (
+            <p id="link-title-error" className={styles.saveMessage} role="alert">
+              {lookupResult.error} Enter a title yourself, then save.
+            </p>
+          )}
           {!isSaving && saveResult && !saveResult.ok && (
             <p className={styles.saveMessage} role="alert">{saveResult.error}</p>
           )}
@@ -281,10 +356,7 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
                   {item.title}
                 </button>
                 <div className={styles.itemMeta}>
-                  <span>{sourceLabels[item.source]}{item.author ? ` — ${item.author}` : ""}</span>
-                  <a href={item.originalUrl} target="_blank" rel="noopener noreferrer">
-                    original<span className="sr-only"> ({item.isDemo ? "example link, " : ""}opens in a new tab)</span>
-                  </a>
+                  <span>{sourceLabels[item.source]}</span>
                   <span>{statusLabels[item.status]}</span>
                   {rating !== null && <span>Rated {rating}/5</span>}
                 </div>
