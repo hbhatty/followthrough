@@ -16,6 +16,8 @@ i add links as i find them and come back when i actually have time to read or wa
 
 the point isn't to review everything perfectly. it's just a way to slowly clear out the pile and keep the useful stuff somewhere i can search later.
 
+on phones, the list and item details appear one at a time, with a back button to return to saved links. the mobile layout uses larger tap targets and 16px text in form fields; desktop keeps the side-by-side view.
+
 ## Optional private deployment
 
 you don't need vercel or turso to use followthrough. the local sqlite setup is enough. if you want to access the same collection from other devices, you can deploy the app privately with vercel and keep the database in turso.
