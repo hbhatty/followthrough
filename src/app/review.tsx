@@ -22,7 +22,6 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
   const [search, setSearch] = useState<{ query: string; ids: Set<string> } | null>(null);
   const [selectedId, setSelectedId] = useState<string>();
   const [detailOpen, setDetailOpen] = useState(false);
-  const [skipped, setSkipped] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
   const navigationLock = useRef(false);
   const [focusRequest, setFocusRequest] = useState<{ itemId?: string } | null>(null);
@@ -61,8 +60,7 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
     return matching;
   }, [items, saved, source]);
   const searchItems = search ? sourceItems.filter((item) => search.ids.has(item.id)) : sourceItems;
-  const visibleItems = searchItems.filter((item) =>
-    (filter === "all" || item.status === filter) && !skipped.has(item.id));
+  const visibleItems = searchItems.filter((item) => filter === "all" || item.status === filter);
   const selected = visibleItems.find((item) => item.id === selectedId) ?? visibleItems[0];
   const draft = selected ? drafts[selected.id] ?? { rating: selected.rating, takeaway: selected.takeaway ?? "" } : null;
   const reviewState = selected ? states[selected.id] : undefined;
@@ -122,7 +120,7 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
     if (selected && !navigationLock.current) change(selected, patch, "rating" in patch);
   }
 
-  async function decide(command: "finish" | "archive" | "skip" | "delete") {
+  async function decide(command: "finish" | "archive" | "delete") {
     if (!selected || navigationLock.current) return;
     if (command === "delete" && !window.confirm(
       `Delete “${selected.title}” from followthrough?\n\nThis permanently removes the saved item, rating, and notes. It cannot be undone. The original website is not affected.`,
@@ -141,9 +139,6 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
           return;
         }
         setDeleteState(null);
-      } else if (command === "skip") {
-        if (!(await flush(item))) return;
-        setSkipped((previous) => new Set(previous).add(item.id));
       } else if (!(await act(item, command))) {
         return;
       }
@@ -191,11 +186,6 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
         }
         const result = await addLink(formData);
         if (result.ok) {
-          setSkipped((previous) => {
-            const next = new Set(previous);
-            next.delete(result.item.id);
-            return next;
-          });
           setSearch(null);
           setSearchText("");
           setSource(result.item.source);
@@ -329,13 +319,6 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
           <button type="button" className={styles.textButton} disabled={busy} onClick={() => applySearch("")}>Clear search</button>
         </p>
       )}
-      {skipped.size > 0 && (
-        <p className={styles.notice}>
-          {skipped.size} skipped this session. <button type="button" className={styles.textButton} disabled={busy} onClick={() => void navigate(() => {
-            setSkipped(new Set()); setFilter("to_explore"); setSelectedId(undefined); setDetailOpen(false);
-          })}>Start new session</button>
-        </p>
-      )}
       {!addOpen && saveResult?.ok && selected?.id === saveResult.item.id && (
         <p className={styles.notice} role="status">
           {saveResult.created ? "Link saved." : "Already saved; opened the existing item."}
@@ -365,7 +348,7 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
           })}
         </ul>
         {visibleItems.length === 0 && <p className={styles.empty}>
-          {search ? "No matches in this view. Try All sources or All, or clear the search." : `No items in this view${skipped.size ? " for this session" : ""}.`}
+          {search ? "No matches in this view. Try All sources or All, or clear the search." : "No items in this view."}
         </p>}
       </section>
 
@@ -421,7 +404,6 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
                   {selected.status === "finished" ? "Finished" : "Finish"}
                 </button>
                 {selected.status !== "archived" && <button type="button" disabled={busy} onClick={() => void decide("archive")}>Archive</button>}
-                {selected.status === "to_explore" && <button type="button" disabled={busy} onClick={() => void decide("skip")}>Skip for now</button>}
                 <button type="button" className={styles.deleteButton} disabled={busy}
                   onClick={() => startTransition(async () => { await decide("delete"); })}>Delete link…</button>
               </div>
