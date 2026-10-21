@@ -129,7 +129,7 @@ export default function ReviewCollection({ items, initialDarkMode }: { items: re
     setBusy(true);
     const item = selected;
     const position = visibleItems.findIndex((candidate) => candidate.id === item.id);
-    const next = visibleItems[position + 1] ?? visibleItems.find((candidate) => candidate.id !== item.id);
+    const next = visibleItems[position + 1] ?? visibleItems[position - 1];
     try {
       if (command === "delete") {
         setDeleteState({ id: item.id });
